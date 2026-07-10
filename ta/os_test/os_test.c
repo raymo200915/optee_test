@@ -4,7 +4,6 @@
  * All rights reserved.
  * Copyright (c) 2022, Linaro Limited.
  */
-#include <asan_test.h>
 #include <compiler.h>
 #include <dlfcn.h>
 #include <link.h>
@@ -19,6 +18,10 @@
 #include "os_test.h"
 #include "test_float_subj.h"
 #include "os_test_lib.h"
+
+#ifdef CFG_TA_SANITIZE_KADDRESS
+#include <asan_test.h>
+#endif
 
 #define STATS_UUID \
 	{ 0xd96a5b40, 0xe2c7, 0xb1af, \
