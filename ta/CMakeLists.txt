@@ -24,4 +24,6 @@ target_include_directories(${PROJECT_NAME}
 	INTERFACE large/include
 	INTERFACE subkey1/include
 	INTERFACE subkey2/include
+	INTERFACE zicfilp_test/include
+	INTERFACE zicfilp_compat_test/include
 )

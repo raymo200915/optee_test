@@ -26,6 +26,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/types.h>
+#include <ta_zicfilp_compat.h>
+#include <ta_zicfilp_test.h>
 #include <ta_arm_bti.h>
 #include <ta_concurrent.h>
 #include <ta_create_fail_test.h>
@@ -3765,3 +3767,92 @@ out:
 	Do_ADBG_EndSubCase(c, "TA ASLR");
 }
 ADBG_CASE_DEFINE(regression, 1047, xtest_tee_test_1047, "Test ASLR");
+
+#if defined(CFG_TA_ZICFILP) && defined(__riscv)
+static const TEEC_UUID zicfilp_test_ta_uuid = TA_ZICFILP_TEST_UUID;
+static const TEEC_UUID zicfilp_compat_test_ta_uuid = TA_ZICFILP_COMPAT_UUID;
+
+static void zicfilp_invoke_positive(ADBG_Case_t *c,
+				    const TEEC_UUID *uuid, uint32_t expected)
+{
+	TEEC_Session session = { };
+	TEEC_Operation op = TEEC_OPERATION_INITIALIZER;
+	uint32_t ret_orig = 0;
+
+	op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_OUTPUT, TEEC_NONE,
+					 TEEC_NONE, TEEC_NONE);
+	if (!ADBG_EXPECT_TEEC_SUCCESS(c,
+			xtest_teec_open_session(&session, uuid, NULL, &ret_orig)))
+		return;
+
+	if (ADBG_EXPECT_TEEC_SUCCESS(c,
+			TEEC_InvokeCommand(&session,
+				TA_ZICFILP_CMD_INDIRECT_CALL, &op, &ret_orig)))
+		ADBG_EXPECT(c, expected, op.params[0].value.a);
+
+	TEEC_CloseSession(&session);
+}
+
+static void zicfilp_invoke_fault(ADBG_Case_t *c, uint32_t cmd)
+{
+	TEEC_Session session = { };
+	uint32_t ret_orig = 0;
+
+	if (!ADBG_EXPECT_TEEC_SUCCESS(c,
+			xtest_teec_open_session(&session, &zicfilp_test_ta_uuid,
+					NULL, &ret_orig)))
+		return;
+
+	ADBG_EXPECT_TEEC_RESULT(c, TEEC_ERROR_TARGET_DEAD,
+				TEEC_InvokeCommand(&session, cmd, NULL, &ret_orig));
+	ADBG_EXPECT_TEEC_ERROR_ORIGIN(c, TEEC_ORIGIN_TEE, ret_orig);
+	TEEC_CloseSession(&session);
+}
+
+static void zicfilp_invoke_late_load(ADBG_Case_t *c)
+{
+	TEEC_Session session = { };
+	uint32_t ret_orig = 0;
+
+	if (!ADBG_EXPECT_TEEC_SUCCESS(c,
+			xtest_teec_open_session(&session, &zicfilp_test_ta_uuid,
+					NULL, &ret_orig)))
+		return;
+
+	ADBG_EXPECT_TEEC_SUCCESS(c,
+			TEEC_InvokeCommand(&session,
+				TA_ZICFILP_CMD_LATE_UNMARKED_LIBRARY, NULL, &ret_orig));
+	TEEC_CloseSession(&session);
+}
+
+static void xtest_tee_test_1048(ADBG_Case_t *c)
+{
+	Do_ADBG_BeginSubCase(c, "protected indirect call");
+	zicfilp_invoke_positive(c, &zicfilp_test_ta_uuid, 42);
+	Do_ADBG_EndSubCase(c, "protected indirect call");
+
+	Do_ADBG_BeginSubCase(c, "non-LPAD target kills the TA");
+	zicfilp_invoke_fault(c, TA_ZICFILP_CMD_NON_LPAD);
+	Do_ADBG_EndSubCase(c, "non-LPAD target kills the TA");
+
+	/* A new TA instance must still run after the previous one was killed. */
+	Do_ADBG_BeginSubCase(c, "OP-TEE remains operational");
+	zicfilp_invoke_positive(c, &zicfilp_test_ta_uuid, 42);
+	Do_ADBG_EndSubCase(c, "OP-TEE remains operational");
+
+	/* A newly opened TA has not used the FPU before this CFI violation. */
+	Do_ADBG_BeginSubCase(c, "non-LPAD target with FPU off");
+	zicfilp_invoke_fault(c, TA_ZICFILP_CMD_NON_LPAD_FPU_OFF);
+	Do_ADBG_EndSubCase(c, "non-LPAD target with FPU off");
+
+	Do_ADBG_BeginSubCase(c, "TA without CFI property is unguarded");
+	zicfilp_invoke_positive(c, &zicfilp_compat_test_ta_uuid, 17);
+	Do_ADBG_EndSubCase(c, "TA without CFI property is unguarded");
+
+	Do_ADBG_BeginSubCase(c, "unmarked library is rejected at dlopen");
+	zicfilp_invoke_late_load(c);
+	Do_ADBG_EndSubCase(c, "unmarked library is rejected at dlopen");
+}
+ADBG_CASE_DEFINE(regression, 1048, xtest_tee_test_1048,
+		 "Test RISC-V Zicfilp landing pads");
+#endif /* CFG_TA_ZICFILP && __riscv */
