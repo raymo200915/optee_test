@@ -44,6 +44,10 @@ ifeq ($(CFG_TA_BTI),y)
 TA_DIRS += bti_test
 endif
 
+ifeq ($(CFG_RV64_ta_rv64)-$(CFG_TA_ZICFILP),y-y)
+TA_DIRS += zicfilp_test zicfilp_compat_test zicfilp_late_lib
+endif
+
 .PHONY: all
 all: ta
 

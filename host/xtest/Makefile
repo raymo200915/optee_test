@@ -133,6 +133,11 @@ CFLAGS += -I../../ta/bti_test/include
 CFLAGS += -I../../ta/subkey1/include
 CFLAGS += -I../../ta/subkey2/include
 
+ifeq ($(CFG_TA_ZICFILP),y)
+CFLAGS += -I../../ta/zicfilp_test/include
+CFLAGS += -I../../ta/zicfilp_compat_test/include
+endif
+
 TA_DIR ?= /lib/optee_armtz
 CFLAGS += -DTA_DIR=\"$(TA_DIR)\"
 
