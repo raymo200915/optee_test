@@ -3827,6 +3827,57 @@ static void zicfilp_invoke_late_load(ADBG_Case_t *c)
 	TEEC_CloseSession(&session);
 }
 
+static void zicfilp_alternate_tas(ADBG_Case_t *c)
+{
+	TEEC_Session compat = { };
+	TEEC_Session guarded = { };
+	TEEC_Operation op = TEEC_OPERATION_INITIALIZER;
+	uint32_t ret_orig = 0;
+	unsigned int n = 0;
+
+	if (!ADBG_EXPECT_TEEC_SUCCESS(c,
+			xtest_teec_open_session(&compat,
+					&zicfilp_compat_test_ta_uuid,
+					NULL, &ret_orig)))
+		return;
+
+	for (n = 0; n < 4; n++) {
+		if (!ADBG_EXPECT_TEEC_SUCCESS(c,
+				xtest_teec_open_session(&guarded,
+						&zicfilp_test_ta_uuid,
+						NULL, &ret_orig)))
+			break;
+
+		op = (TEEC_Operation)TEEC_OPERATION_INITIALIZER;
+		op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_OUTPUT, TEEC_NONE,
+						 TEEC_NONE, TEEC_NONE);
+		if (ADBG_EXPECT_TEEC_SUCCESS(c,
+				TEEC_InvokeCommand(&guarded,
+					TA_ZICFILP_CMD_INDIRECT_CALL,
+					&op, &ret_orig)))
+			ADBG_EXPECT(c, 42, op.params[0].value.a);
+
+		op = (TEEC_Operation)TEEC_OPERATION_INITIALIZER;
+		op.paramTypes = TEEC_PARAM_TYPES(TEEC_VALUE_OUTPUT, TEEC_NONE,
+						 TEEC_NONE, TEEC_NONE);
+		if (ADBG_EXPECT_TEEC_SUCCESS(c,
+				TEEC_InvokeCommand(&compat,
+					TA_ZICFILP_COMPAT_CMD_INDIRECT_CALL,
+					&op, &ret_orig)))
+			ADBG_EXPECT(c, 17, op.params[0].value.a);
+
+		ret_orig = 0;
+		ADBG_EXPECT_TEEC_RESULT(c, TEEC_ERROR_TARGET_DEAD,
+				TEEC_InvokeCommand(&guarded,
+					TA_ZICFILP_CMD_NON_LPAD,
+					NULL, &ret_orig));
+		ADBG_EXPECT_TEEC_ERROR_ORIGIN(c, TEEC_ORIGIN_TEE, ret_orig);
+		TEEC_CloseSession(&guarded);
+	}
+
+	TEEC_CloseSession(&compat);
+}
+
 static void xtest_tee_test_1048(ADBG_Case_t *c)
 {
 	Do_ADBG_BeginSubCase(c, "protected indirect call");
@@ -3854,6 +3905,10 @@ static void xtest_tee_test_1048(ADBG_Case_t *c)
 	Do_ADBG_BeginSubCase(c, "unmarked library is rejected at dlopen");
 	zicfilp_invoke_late_load(c);
 	Do_ADBG_EndSubCase(c, "unmarked library is rejected at dlopen");
+
+	Do_ADBG_BeginSubCase(c, "landing-pad enforcement across TA switches");
+	zicfilp_alternate_tas(c);
+	Do_ADBG_EndSubCase(c, "landing-pad enforcement across TA switches");
 }
 ADBG_CASE_DEFINE(regression, 1048, xtest_tee_test_1048,
 		 "Test RISC-V Zicfilp landing pads");
