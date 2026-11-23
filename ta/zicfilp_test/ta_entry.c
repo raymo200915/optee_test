@@ -4,11 +4,34 @@
  */
 
 #include <dlfcn.h>
+#include <ta_zicfilp_compat.h>
 #include <ta_zicfilp_test.h>
 #include <tee_internal_api.h>
 
 void zicfilp_indirect_jump(void (*fn)(void));
 void zicfilp_non_lpad_target(void);
+
+static TEE_Result call_compat_ta(void)
+{
+	const TEE_UUID uuid = TA_ZICFILP_COMPAT_UUID;
+	TEE_TASessionHandle session = TEE_HANDLE_NULL;
+	TEE_Param params[4] = { };
+	uint32_t types = TEE_PARAM_TYPES(TEE_PARAM_TYPE_VALUE_OUTPUT,
+					 TEE_PARAM_TYPE_NONE, TEE_PARAM_TYPE_NONE,
+					 TEE_PARAM_TYPE_NONE);
+	TEE_Result res = TEE_OpenTASession(&uuid, TEE_TIMEOUT_INFINITE, 0,
+					   NULL, &session, NULL);
+
+	if (res != TEE_SUCCESS)
+		return res;
+	res = TEE_InvokeTACommand(session, TEE_TIMEOUT_INFINITE,
+				  TA_ZICFILP_COMPAT_CMD_INDIRECT_CALL,
+				  types, params, NULL);
+	TEE_CloseTASession(session);
+	if (res == TEE_SUCCESS && params[0].value.a != 17)
+		return TEE_ERROR_GENERIC;
+	return res;
+}
 
 static __attribute__((noinline)) int zicfilp_target(int value)
 {
@@ -58,12 +81,25 @@ TEE_Result TA_InvokeCommandEntryPoint(void *session_ctx __unused,
 		return TEE_SUCCESS;
 	case TA_ZICFILP_CMD_NON_LPAD:
 	case TA_ZICFILP_CMD_NON_LPAD_FPU_OFF:
+	case TA_ZICFILP_CMD_FAULT_AFTER_COMPAT:
+	case TA_ZICFILP_CMD_FAULT_AFTER_WAIT:
 		if (param_types != TEE_PARAM_TYPES(TEE_PARAM_TYPE_NONE,
 						    TEE_PARAM_TYPE_NONE,
 						    TEE_PARAM_TYPE_NONE,
 						    TEE_PARAM_TYPE_NONE))
 			return TEE_ERROR_BAD_PARAMETERS;
 
+		if (cmd == TA_ZICFILP_CMD_FAULT_AFTER_COMPAT) {
+			TEE_Result res = call_compat_ta();
+
+			if (res != TEE_SUCCESS)
+				return res;
+		} else if (cmd == TA_ZICFILP_CMD_FAULT_AFTER_WAIT) {
+			TEE_Result res = TEE_Wait(1);
+
+			if (res != TEE_SUCCESS)
+				return res;
+		}
 		zicfilp_indirect_jump(zicfilp_non_lpad_target);
 		return TEE_ERROR_GENERIC;
 	case TA_ZICFILP_CMD_LATE_UNMARKED_LIBRARY:

@@ -3775,7 +3775,8 @@ static const TEEC_UUID zicfilp_test_ta_uuid = TA_ZICFILP_TEST_UUID;
 static const TEEC_UUID zicfilp_compat_test_ta_uuid = TA_ZICFILP_COMPAT_UUID;
 
 static void zicfilp_invoke_positive(ADBG_Case_t *c,
-				    const TEEC_UUID *uuid, uint32_t expected)
+				    const TEEC_UUID *uuid, uint32_t cmd,
+				    uint32_t expected)
 {
 	TEEC_Session session = { };
 	TEEC_Operation op = TEEC_OPERATION_INITIALIZER;
@@ -3789,7 +3790,7 @@ static void zicfilp_invoke_positive(ADBG_Case_t *c,
 
 	if (ADBG_EXPECT_TEEC_SUCCESS(c,
 			TEEC_InvokeCommand(&session,
-				TA_ZICFILP_CMD_INDIRECT_CALL, &op, &ret_orig)))
+				cmd, &op, &ret_orig)))
 		ADBG_EXPECT(c, expected, op.params[0].value.a);
 
 	TEEC_CloseSession(&session);
@@ -3881,7 +3882,8 @@ static void zicfilp_alternate_tas(ADBG_Case_t *c)
 static void xtest_tee_test_1048(ADBG_Case_t *c)
 {
 	Do_ADBG_BeginSubCase(c, "protected indirect call");
-	zicfilp_invoke_positive(c, &zicfilp_test_ta_uuid, 42);
+	zicfilp_invoke_positive(c, &zicfilp_test_ta_uuid,
+				TA_ZICFILP_CMD_INDIRECT_CALL, 42);
 	Do_ADBG_EndSubCase(c, "protected indirect call");
 
 	Do_ADBG_BeginSubCase(c, "non-LPAD target kills the TA");
@@ -3890,7 +3892,8 @@ static void xtest_tee_test_1048(ADBG_Case_t *c)
 
 	/* A new TA instance must still run after the previous one was killed. */
 	Do_ADBG_BeginSubCase(c, "OP-TEE remains operational");
-	zicfilp_invoke_positive(c, &zicfilp_test_ta_uuid, 42);
+	zicfilp_invoke_positive(c, &zicfilp_test_ta_uuid,
+				TA_ZICFILP_CMD_INDIRECT_CALL, 42);
 	Do_ADBG_EndSubCase(c, "OP-TEE remains operational");
 
 	/* A newly opened TA has not used the FPU before this CFI violation. */
@@ -3899,7 +3902,8 @@ static void xtest_tee_test_1048(ADBG_Case_t *c)
 	Do_ADBG_EndSubCase(c, "non-LPAD target with FPU off");
 
 	Do_ADBG_BeginSubCase(c, "TA without CFI property is unguarded");
-	zicfilp_invoke_positive(c, &zicfilp_compat_test_ta_uuid, 17);
+	zicfilp_invoke_positive(c, &zicfilp_compat_test_ta_uuid,
+				TA_ZICFILP_COMPAT_CMD_INDIRECT_CALL, 17);
 	Do_ADBG_EndSubCase(c, "TA without CFI property is unguarded");
 
 	Do_ADBG_BeginSubCase(c, "unmarked library is rejected at dlopen");
@@ -3909,6 +3913,24 @@ static void xtest_tee_test_1048(ADBG_Case_t *c)
 	Do_ADBG_BeginSubCase(c, "landing-pad enforcement across TA switches");
 	zicfilp_alternate_tas(c);
 	Do_ADBG_EndSubCase(c, "landing-pad enforcement across TA switches");
+
+	Do_ADBG_BeginSubCase(c, "guarded TA after unguarded TA call");
+	zicfilp_invoke_fault(c, TA_ZICFILP_CMD_FAULT_AFTER_COMPAT);
+	Do_ADBG_EndSubCase(c, "guarded TA after unguarded TA call");
+
+	Do_ADBG_BeginSubCase(c, "unguarded TA after guarded TA call");
+	zicfilp_invoke_positive(c, &zicfilp_compat_test_ta_uuid,
+				TA_ZICFILP_COMPAT_CMD_AFTER_GUARDED, 17);
+	Do_ADBG_EndSubCase(c, "unguarded TA after guarded TA call");
+
+	Do_ADBG_BeginSubCase(c, "guarded TA after RPC wait");
+	zicfilp_invoke_fault(c, TA_ZICFILP_CMD_FAULT_AFTER_WAIT);
+	Do_ADBG_EndSubCase(c, "guarded TA after RPC wait");
+
+	Do_ADBG_BeginSubCase(c, "unguarded TA after RPC wait");
+	zicfilp_invoke_positive(c, &zicfilp_compat_test_ta_uuid,
+				TA_ZICFILP_COMPAT_CMD_AFTER_WAIT, 17);
+	Do_ADBG_EndSubCase(c, "unguarded TA after RPC wait");
 }
 ADBG_CASE_DEFINE(regression, 1048, xtest_tee_test_1048,
 		 "Test RISC-V Zicfilp landing pads");
